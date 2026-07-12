@@ -1,0 +1,38 @@
+# PreAuthIQ — insurance pre-authorization demo.
+#
+# Prereq: copy .env.example to backend/.env and fill in GROQ_API_KEY + Google creds.
+#   cp .env.example backend/.env
+#
+# Then:  docker compose up --build
+#   Frontend: http://localhost:8080
+#   Backend:  http://localhost:8068   (also serves the Google OAuth callback)
+#
+# The Google Authorized redirect URI must be:
+#   http://localhost:8068/rbac/oauth/google/callback
+
+services:
+  backend:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      # Overrides for the container network (win over env_file).
+      FRONTEND_URL: http://localhost:8080
+      DATABASE_URL: sqlite:////app/storage/app.db
+      BACKEND_PORT: "8068"
+    ports:
+      - "8068:8068"
+    volumes:
+      - backend_storage:/app/storage
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend_storage:

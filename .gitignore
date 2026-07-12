@@ -1,0 +1,29 @@
+
+# Secrets
+.env
+.env.local
+backend/.env
+**/.env
+client_secret*.json
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.db
+backend/app.db
+backend/storage/app.db
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Editor / OS
+.DS_Store
+Thumbs.db

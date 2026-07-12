@@ -1,0 +1,18 @@
+Assess the following claim against the claimant's plan rules.
+
+=== CLAIM ===
+{claim_json}
+
+=== CLAIMANT PLAN RULES (authoritative policy — do not go beyond these) ===
+{plan_rules_json}
+
+=== FINANCIAL CONTEXT ===
+{financials_json}
+
+=== DOCUMENT COMPLETENESS (deterministic backend check) ===
+{completeness_json}
+
+=== EXTRACTED DOCUMENT TEXT ===
+{documents_text}
+
+Produce your JSON assessment now.
