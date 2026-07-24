@@ -1,10 +1,21 @@
-"""Assemble the review context for a claim (plan rules come straight from the DB)."""
+"""Assemble the review context for a claim (plan rules come straight from the DB).
+
+Optimized for TOON (Token Object Optimization Notation):
+- Compact field names
+- Truncated document text
+- Progressive summarization
+"""
 from sqlalchemy.orm import Session
 
 from models import Claim, User
 from services.completeness import check_claim_documents
 from services.documents import extract_document_text
 from services.integrity import check_identity
+from services.toon import (
+    FIELD_ABBREV,
+    summarize_documents_text,
+    summarize_plan_rules,
+)
 
 
 def used_annual_amount(db: Session, user_id: int, exclude_claim_id: int | None = None) -> float:
@@ -67,3 +78,35 @@ def build_claim_context(db: Session, claim: Claim) -> dict:
         "documents_text": documents_text,
         "used_amount": used,
     }
+
+
+def build_claim_context_optimized(db: Session, claim: Claim) -> dict:
+    """TOON-optimized claim context with truncated documents and summarized rules."""
+    context = build_claim_context(db, claim)
+    
+    # Cap raw document text. Only the integrity agent receives this block, and the
+    # authoritative name/identity check (services.integrity.check_identity) already
+    # runs on the *full* OCR text — so this cap saves tokens without weakening the
+    # fraud gate.
+    if "documents_text" in context:
+        context["documents_text"] = summarize_documents_text(
+            context["documents_text"],
+            max_chars=2000
+        )
+    
+    # Simplify plan rules (only keep coverage-relevant fields)
+    if "plan_rules" in context and context["plan_rules"].get("rules"):
+        context["plan_rules"]["rules"] = summarize_plan_rules(
+            context["plan_rules"]["rules"]
+        )
+    
+    # Store list of document metadata (lighter than full text)
+    documents_list = []
+    for doc in claim.documents:
+        documents_list.append({
+            "dt": doc.doc_type,
+            "fn": doc.filename,
+        })
+    context["documents"] = documents_list
+    
+    return context

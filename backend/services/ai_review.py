@@ -15,7 +15,10 @@ from abc import ABC, abstractmethod
 
 from config import LLM_PROVIDER
 from services.agents import PipelineResult, run_pipeline
-from services.context import build_claim_context  # re-export
+from services.context import (  # re-export
+    build_claim_context,
+    build_claim_context_optimized,
+)
 from services.llm_client import LLMError, active_model
 
 # Backwards-compatible alias used by routes.
@@ -28,6 +31,7 @@ __all__ = [
     "ClaudeProvider",
     "get_provider",
     "build_claim_context",
+    "build_claim_context_optimized",
     "PipelineResult",
 ]
 

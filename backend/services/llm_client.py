@@ -36,6 +36,12 @@ def active_model() -> str:
 
 def chat_json(system_prompt: str, user_prompt: str, temperature: float = 0.1) -> dict:
     """Return a parsed JSON object from the model. Raises LLMError on failure."""
+    result, _ = chat_json_with_tokens(system_prompt, user_prompt, temperature)
+    return result
+
+
+def chat_json_with_tokens(system_prompt: str, user_prompt: str, temperature: float = 0.1) -> tuple[dict, dict]:
+    """Return (parsed JSON, token_usage). token_usage = {prompt_tokens, completion_tokens, total_tokens}."""
     if LLM_PROVIDER == "groq":
         return _groq_chat_json(system_prompt, user_prompt, temperature)
     if LLM_PROVIDER == "claude":
@@ -44,7 +50,7 @@ def chat_json(system_prompt: str, user_prompt: str, temperature: float = 0.1) ->
     raise LLMError(f"Unknown LLM_PROVIDER '{LLM_PROVIDER}'.")
 
 
-def _groq_chat_json(system_prompt: str, user_prompt: str, temperature: float) -> dict:
+def _groq_chat_json(system_prompt: str, user_prompt: str, temperature: float) -> tuple[dict, dict]:
     if not GROQ_API_KEY:
         raise LLMError("GROQ_API_KEY is not set. Add it to .env to run AI reviews.")
     payload = {
@@ -84,11 +90,20 @@ def _groq_chat_json(system_prompt: str, user_prompt: str, temperature: float) ->
             raise LLMError(f"Groq API error {resp.status_code}: {resp.text[:400]}")
 
         try:
-            content = resp.json()["choices"][0]["message"]["content"]
+            response_json = resp.json()
+            content = response_json["choices"][0]["message"]["content"]
+            # Extract token usage from response
+            usage = response_json.get("usage", {})
+            token_usage = {
+                "prompt_tokens": usage.get("prompt_tokens", 0),
+                "completion_tokens": usage.get("completion_tokens", 0),
+                "total_tokens": usage.get("total_tokens", 0),
+            }
         except (KeyError, IndexError, ValueError) as exc:
             raise LLMError(f"Unexpected Groq response: {resp.text[:400]}") from exc
         try:
-            return json.loads(content)
+            parsed = json.loads(content)
+            return parsed, token_usage
         except json.JSONDecodeError as exc:
             raise LLMError(f"Model did not return valid JSON: {content[:400]}") from exc
 

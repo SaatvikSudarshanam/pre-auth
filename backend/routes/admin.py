@@ -27,7 +27,7 @@ from schemas import AIReviewOut, DecisionIn
 from security import get_current_admin
 from services.ai_review import (
     AIReviewError,
-    build_claim_context,
+    build_claim_context_optimized,
     get_provider,
 )
 from services.completeness import check_claim_documents
@@ -239,7 +239,7 @@ def run_ai_review(claim_id: int, db: Session = Depends(get_db)):
     if not claim.user.plan:
         raise HTTPException(status_code=400, detail="Claimant has no plan on file")
 
-    context = build_claim_context(db, claim)
+    context = build_claim_context_optimized(db, claim)
     try:
         provider = get_provider()
         pipeline = provider.review_claim(context)
