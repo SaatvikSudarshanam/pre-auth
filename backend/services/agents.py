@@ -154,9 +154,18 @@ def _render_user(context: dict, agent_key: str, prior: dict) -> str:
         parts.append(rendered if isinstance(rendered, str) else _compact(rendered))
 
     # Upstream findings only for agents that requested them (pre-auth, denial).
-    if whitelist.get("prior_agents") and prior:
-        parts.append("=== UPSTREAM FINDINGS ===")
-        parts.append(_compact(prior))
+    # `prior_agents` is either True (all upstream findings) or a list of agent
+    # keys — the list form lets a downstream agent take only the slices it needs
+    # (e.g. denial reads just the verdict + coverage, not every raw finding).
+    prior_spec = whitelist.get("prior_agents")
+    if prior_spec and prior:
+        if isinstance(prior_spec, list):
+            selected = {k: prior[k] for k in prior_spec if k in prior}
+        else:
+            selected = prior
+        if selected:
+            parts.append("=== UPSTREAM FINDINGS ===")
+            parts.append(_compact(selected))
 
     parts.append("Respond with valid JSON only.")
     return "\n".join(parts)

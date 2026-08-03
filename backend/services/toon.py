@@ -151,7 +151,10 @@ AGENT_CONTEXT_FIELDS = {
     },
     "denial": {
         "claim": ["claim_id", "claim_type", "amount"],
-        "prior_agents": True,  # Only needs verdict + reasoning
+        # Only needs the final recommendation + the plan terms to explain it —
+        # not the raw registration/completeness/integrity findings. Passing a list
+        # (instead of True) restricts UPSTREAM FINDINGS to just these agents.
+        "prior_agents": ["pre_authorization", "coverage"],
     },
 }
 
@@ -228,6 +231,13 @@ class TokenBudget:
 # ============================================================================
 # PROGRESSIVE SUMMARIZATION
 # ============================================================================
+
+# Cap on raw OCR text handed to the LLM integrity agent. The authoritative
+# name/identity check (services.integrity.check_identity) already runs on the
+# *full* OCR text deterministically, so this cap only bounds the LLM's
+# cross-field consistency scan — the largest single user-prompt block. Tune here.
+DOC_TEXT_MAX_CHARS = 1500
+
 
 def summarize_documents_text(text: str, max_chars: int = 500) -> str:
     """Truncate document text for agents that don't need full detail."""

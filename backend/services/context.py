@@ -12,7 +12,7 @@ from services.completeness import check_claim_documents
 from services.documents import extract_document_text
 from services.integrity import check_identity
 from services.toon import (
-    FIELD_ABBREV,
+    DOC_TEXT_MAX_CHARS,
     summarize_documents_text,
     summarize_plan_rules,
 )
@@ -91,7 +91,7 @@ def build_claim_context_optimized(db: Session, claim: Claim) -> dict:
     if "documents_text" in context:
         context["documents_text"] = summarize_documents_text(
             context["documents_text"],
-            max_chars=2000
+            max_chars=DOC_TEXT_MAX_CHARS,
         )
     
     # Simplify plan rules (only keep coverage-relevant fields)
