@@ -1,0 +1,51 @@
+# EmailJS template reference — paste the HTML below into your EmailJS template body.
+# Set "To Email" field to: {{to_email}}
+# Suggested subject: PreAuthIQ — Claim #{{claim_id}} {{decision}}
+
+<div style="font-family: system-ui, sans-serif, Arial; font-size: 12px">
+  <div style="color: #2c3e50; font-size: 14px; margin-bottom: 8px">
+    Hello <strong>{{name}}</strong>,
+  </div>
+  <div style="color: #555">
+    Your pre-authorization claim <strong>#{{claim_id}}</strong> ({{claim_type}}) has been
+    updated. Decision: <strong>{{decision}}</strong>.
+  </div>
+  <div
+    style="
+      margin-top: 20px;
+      padding: 15px 0;
+      border-width: 1px 0;
+      border-style: dashed;
+      border-color: lightgrey;
+    "
+  >
+    <table role="presentation">
+      <tr>
+        <td style="vertical-align: top">
+          <div
+            style="
+              padding: 6px 10px;
+              margin: 0 10px;
+              background-color: aliceblue;
+              border-radius: 5px;
+              font-size: 26px;
+            "
+            role="img"
+          >
+            📋
+          </div>
+        </td>
+        <td style="vertical-align: top">
+          <div style="color: #2c3e50; font-size: 16px">
+            <strong>PreAuthIQ · Claim #{{claim_id}}</strong>
+          </div>
+          <div style="color: #cccccc; font-size: 13px">{{time}}</div>
+          <p style="font-size: 16px; color: #444; line-height: 1.5">{{message}}</p>
+        </td>
+      </tr>
+    </table>
+  </div>
+  <div style="margin-top: 16px; color: #888; font-size: 11px">
+    This is an automated notification from PreAuthIQ. Please do not reply to this email.
+  </div>
+</div>

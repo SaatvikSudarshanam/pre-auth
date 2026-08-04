@@ -39,6 +39,37 @@ function MoreInfoUpload({ claimId, onDone }) {
   const [docType, setDocType] = useState("itemized_bill");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [user, setUser] = useState(null);
+  const [phone, setPhone] = useState("");
+  const [updatingPhone, setUpdatingPhone] = useState(false);
+
+  // Load user profile on mount to get current phone
+  useEffect(() => {
+    api.me().then((u) => {
+      setUser(u);
+      setPhone(u.phone || "");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const updatePhoneIfChanged = async () => {
+    if (user && phone !== user.phone) {
+      try {
+        setUpdatingPhone(true);
+        await api.completeProfile({
+          full_name: user.full_name,
+          dob: user.dob,
+          plan_id: user.plan_id,
+          phone: phone.trim(),
+        });
+      } catch (ex) {
+        setErr(errorMessage(ex, "Could not update phone"));
+        throw ex;
+      } finally {
+        setUpdatingPhone(false);
+      }
+    }
+  };
 
   const pick = async (e) => {
     const file = e.target.files?.[0];
@@ -46,6 +77,8 @@ function MoreInfoUpload({ claimId, onDone }) {
     setErr("");
     setBusy(true);
     try {
+      // Update phone if changed before uploading
+      await updatePhoneIfChanged();
       await api.uploadDocument(claimId, docType, file);
       await onDone();
     } catch (ex) {
@@ -57,32 +90,51 @@ function MoreInfoUpload({ claimId, onDone }) {
   };
 
   return (
-    <Card className="space-y-3 p-5">
-      <div className="text-sm font-medium text-navy">Add a document</div>
-      <p className="text-xs text-gray-400">
-        Uploading a document returns your claim to review.
-      </p>
-      <div className="flex items-center gap-3">
-        <select className="input max-w-[220px]" value={docType} onChange={(e) => setDocType(e.target.value)}>
-          {DOC_TYPES.map((d) => (
-            <option key={d} value={d}>
-              {DOC_TYPE_LABEL[d]}
-            </option>
-          ))}
-        </select>
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".pdf,.jpg,.jpeg,.png"
-          className="hidden"
-          onChange={pick}
-        />
-        <Button variant="subtle" loading={busy} onClick={() => inputRef.current?.click()}>
-          Choose file
-        </Button>
-      </div>
-      {err && <Alert>{err}</Alert>}
-    </Card>
+    <div className="space-y-3">
+      <Card className="space-y-3 p-5">
+        <div className="text-sm font-medium text-navy">Add a document</div>
+        <p className="text-xs text-gray-400">
+          Uploading a document returns your claim to review.
+        </p>
+        <div className="flex items-center gap-3">
+          <select className="input max-w-[220px]" value={docType} onChange={(e) => setDocType(e.target.value)}>
+            {DOC_TYPES.map((d) => (
+              <option key={d} value={d}>
+                {DOC_TYPE_LABEL[d]}
+              </option>
+            ))}
+          </select>
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".pdf,.jpg,.jpeg,.png"
+            className="hidden"
+            onChange={pick}
+          />
+          <Button variant="subtle" loading={busy || updatingPhone} onClick={() => inputRef.current?.click()}>
+            Choose file
+          </Button>
+        </div>
+        {err && <Alert>{err}</Alert>}
+      </Card>
+      {user && (
+        <Card className="space-y-3 p-5">
+          <div className="text-sm font-medium text-navy">Confirm your phone number</div>
+          <p className="text-xs text-gray-400">
+            This number will be used when the admin notifies you of a decision.
+          </p>
+          <div>
+            <input
+              className="input"
+              type="tel"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="E.164 format: +919876543210"
+            />
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 

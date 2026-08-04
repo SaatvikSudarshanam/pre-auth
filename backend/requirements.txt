@@ -11,6 +11,7 @@ passlib==1.7.4
 PyJWT==2.8.0
 httpx==0.27.0
 python-dotenv==1.0.1
+twilio==9.4.0
 # OCR (images + scanned PDFs). RapidOCR bundles ONNX models; PyMuPDF rasterizes PDFs.
 rapidocr-onnxruntime==1.4.4
 pymupdf==1.28.0

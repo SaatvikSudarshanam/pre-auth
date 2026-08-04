@@ -23,7 +23,7 @@ from models import (
     User,
     utcnow,
 )
-from schemas import AIReviewOut, DecisionIn
+from schemas import AIReviewOut, DecisionIn, NotifyCallIn
 from security import get_current_admin
 from services.ai_review import (
     AIReviewError,
@@ -163,6 +163,7 @@ def claim_detail(claim_id: int, db: Session = Depends(get_db)):
             "id": user.id,
             "full_name": user.full_name,
             "email": user.email,
+            "phone": user.phone,
             "dob": user.dob,
             "member_id": user.member_id,
         },
@@ -371,3 +372,60 @@ def decide(claim_id: int, body: DecisionIn, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(claim)
     return {"id": claim.id, "status": claim.status, "customer_message": claim.customer_message}
+
+
+CLAIM_TYPE_LABEL = {
+    "hospitalization": "Hospitalization",
+    "procedure": "Procedure",
+    "pharmacy": "Pharmacy",
+    "preauth_request": "Pre-Authorization Request",
+}
+
+
+@router.post("/claims/{claim_id}/notify-call")
+def notify_call(claim_id: int, body: NotifyCallIn, db: Session = Depends(get_db)):
+    print(f"DEBUG: notify_call called for claim {claim_id}", flush=True)
+    
+    from config import TWILIO_TEST_PHONE_NUMBER, TWILIO_CALLBACK_URL
+    from services.twilio_voice import is_twilio_configured, place_decision_call
+
+    print(f"DEBUG: Imported config. callback_url = {TWILIO_CALLBACK_URL}", flush=True)
+
+    if not is_twilio_configured():
+        print(f"DEBUG: Twilio not configured", flush=True)
+        return {"ok": False, "skipped": True, "reason": "Twilio is not configured"}
+
+    print(f"DEBUG: Loading claim {claim_id}", flush=True)
+    claim = _load_claim(db, claim_id)
+    user: User = claim.user
+    # Use test phone number if customer has no phone on file
+    to_phone = user.phone or TWILIO_TEST_PHONE_NUMBER
+    print(f"DEBUG: to_phone = {to_phone}", flush=True)
+
+    if body.action not in ADMIN_ACTIONS:
+        raise HTTPException(status_code=422, detail="Invalid action")
+
+    claim_type = CLAIM_TYPE_LABEL.get(claim.claim_type, claim.claim_type)
+    print(f"DEBUG: About to call place_decision_call", flush=True)
+    try:
+        call_sid = place_decision_call(
+            to_phone=to_phone,
+            customer_name=user.full_name,
+            claim_id=claim.id,
+            action=body.action,
+            message=body.customer_message.strip(),
+            claim_type=claim_type,
+            callback_url=TWILIO_CALLBACK_URL,
+        )
+        print(f"DEBUG: call_sid = {call_sid}", flush=True)
+    except ValueError as exc:
+        print(f"DEBUG: ValueError: {exc}", flush=True)
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        # Log error but don't crash — return graceful skip instead of 502
+        print(f"WARNING: Twilio call failed for claim {claim_id}: {exc}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return {"ok": False, "skipped": True, "reason": f"Twilio call failed: {exc}"}
+
+    return {"ok": True, "call_sid": call_sid, "phone": to_phone}

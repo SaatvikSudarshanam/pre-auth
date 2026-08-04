@@ -31,6 +31,12 @@ class ProfileIn(BaseModel):
     full_name: str = Field(min_length=1)
     dob: str
     plan_id: int
+    phone: Optional[str] = None
+
+
+class NotifyCallIn(BaseModel):
+    action: str
+    customer_message: str = Field(min_length=1)
 
 
 # ---- Plans --------------------------------------------------------------
@@ -54,6 +60,7 @@ class MeOut(BaseModel):
     id: int
     email: str
     full_name: Optional[str]
+    phone: Optional[str] = None
     dob: Optional[str]
     member_id: Optional[str]
     plan: Optional[PlanOut]

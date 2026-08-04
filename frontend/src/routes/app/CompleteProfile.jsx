@@ -12,6 +12,7 @@ export default function CompleteProfile() {
   const [plans, setPlans] = useState(null);
   const [fullName, setFullName] = useState("");
   const [dob, setDob] = useState("");
+  const [phone, setPhone] = useState("");
   const [planId, setPlanId] = useState(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -31,7 +32,7 @@ export default function CompleteProfile() {
     setError("");
     setSaving(true);
     try {
-      await api.completeProfile({ full_name: fullName, dob, plan_id: planId });
+      await api.completeProfile({ full_name: fullName, dob, plan_id: planId, phone: phone.trim() });
       await reloadMe();
       nav("/app", { replace: true });
     } catch (err) {
@@ -66,6 +67,16 @@ export default function CompleteProfile() {
               required
               value={dob}
               onChange={(e) => setDob(e.target.value)}
+            />
+          </Field>
+          <Field label="Mobile number (for SMS & voice call notifications)">
+            <input
+              className="input"
+              type="tel"
+              required
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              placeholder="E.164 format: +919876543210"
             />
           </Field>
         </Card>

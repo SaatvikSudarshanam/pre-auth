@@ -75,6 +75,7 @@ def me(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
         id=user.id,
         email=user.email,
         full_name=user.full_name,
+        phone=user.phone,
         dob=user.dob,
         member_id=user.member_id,
         plan=PlanOut.model_validate(user.plan) if user.plan else None,
@@ -97,6 +98,8 @@ def complete_profile(
     user.full_name = body.full_name.strip()
     user.dob = body.dob
     user.plan_id = plan.id
+    if body.phone is not None:
+        user.phone = body.phone.strip() or None
     if not user.member_id:
         user.member_id = f"MEM-2026-{user.id:04d}"
     db.commit()

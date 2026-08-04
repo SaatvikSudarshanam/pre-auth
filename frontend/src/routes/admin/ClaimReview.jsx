@@ -11,6 +11,7 @@ import {
   formatDateTime,
   money,
 } from "../../lib/format";
+import { sendDecisionEmail, isEmailConfigured } from "../../lib/email";
 import { errorMessage } from "../../lib/http";
 import { adminApi, documentObjectUrl } from "./adminApi";
 
@@ -388,7 +389,47 @@ export default function ClaimReview() {
         customer_message: message.trim(),
         agreed_with_ai: review ? agreed : null,
       });
-      setSavedNote("Decision saved and sent to the customer.");
+
+      const notifyPayload = { action, customer_message: message.trim() };
+      const tasks = [];
+
+      if (isEmailConfigured()) {
+        tasks.push(
+          sendDecisionEmail({
+            toEmail: claim.customer.email,
+            toName: claim.customer.full_name,
+            claimId: claim.id,
+            action,
+            message: message.trim(),
+            claimType: CLAIM_TYPE_LABEL[claim.claim_type] || claim.claim_type,
+          }).then(() => ({ channel: "email", ok: true })),
+        );
+      }
+
+      tasks.push(
+        adminApi
+          .notifyCall(id, notifyPayload)
+          .then((res) => ({ channel: "call", ok: true, skipped: res.skipped, reason: res.reason }))
+          .catch((err) => ({ channel: "call", ok: false, error: err })),
+      );
+
+      const results = await Promise.all(tasks);
+      const emailResult = results.find((r) => r.channel === "email");
+      const callResult = results.find((r) => r.channel === "call");
+
+      const parts = ["Decision saved."];
+      if (emailResult?.ok) parts.push("Email sent.");
+      else if (isEmailConfigured() && emailResult && !emailResult.ok) parts.push("Email failed.");
+
+      if (callResult?.ok && !callResult.skipped) parts.push("Phone call initiated.");
+      else if (callResult?.ok && callResult.skipped) parts.push("Call skipped (Twilio not configured).");
+      else if (callResult && !callResult.ok) {
+        const msg = callResult.error?.message || "Call failed";
+        parts.push(msg.includes("no phone") ? "No customer phone on file." : "Call failed.");
+      }
+
+      setSavedNote(parts.join(" "));
+
       await load();
     } catch (err) {
       setDecideError(errorMessage(err, "Could not save decision"));

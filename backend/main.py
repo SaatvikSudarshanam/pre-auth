@@ -8,8 +8,23 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import APP_NAME, EXTRA_CORS_ORIGINS, FRONTEND_URL
 from database import Base, SessionLocal, engine
-from routes import admin, auth, consent, customer, oauth
+from routes import admin, auth, consent, customer, oauth, twilio_callback
 from seed import seed_if_empty
+from sqlalchemy import inspect, text
+
+
+def _migrate_schema():
+    """Lightweight SQLite migrations for columns added after first deploy."""
+    if not str(engine.url).startswith("sqlite"):
+        return
+    insp = inspect(engine)
+    if "users" not in insp.get_table_names():
+        return
+    cols = {c["name"] for c in insp.get_columns("users")}
+    if "phone" not in cols:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR"))
+
 
 app = FastAPI(title=f"{APP_NAME} — Insurance Pre-Authorization (Demo)")
 
@@ -34,11 +49,13 @@ app.include_router(oauth.router)
 app.include_router(consent.router)
 app.include_router(customer.router)
 app.include_router(admin.router)
+app.include_router(twilio_callback.router)
 
 
 @app.on_event("startup")
 def on_startup():
     Base.metadata.create_all(bind=engine)
+    _migrate_schema()
     db = SessionLocal()
     try:
         seed_if_empty(db)

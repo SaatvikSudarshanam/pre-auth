@@ -18,6 +18,8 @@ export const adminApi = {
     request(`/api/admin/claims/${id}/ai-review`, withAuth({ method: "POST" })),
   decide: (id, payload) =>
     request(`/api/admin/claims/${id}/decision`, withAuth({ method: "POST", body: payload })),
+  notifyCall: (id, payload) =>
+    request(`/api/admin/claims/${id}/notify-call`, withAuth({ method: "POST", body: payload })),
 };
 
 // Documents are guarded, so we fetch them with the bearer token and hand back an

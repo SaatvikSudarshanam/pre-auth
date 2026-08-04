@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Alert, Button, Card, Field, Spinner } from "../../components/ui";
@@ -108,6 +108,9 @@ export default function NewClaim() {
   const [step, setStep] = useState(1);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [user, setUser] = useState(null);
+  const [phone, setPhone] = useState("");
+  const [updatingPhone, setUpdatingPhone] = useState(false);
 
   const [form, setForm] = useState({
     claim_type: "hospitalization",
@@ -119,6 +122,15 @@ export default function NewClaim() {
   const [claim, setClaim] = useState(null); // draft claim after step 1
 
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  // Load user profile on mount to get current phone
+  useEffect(() => {
+    api.me().then((u) => {
+      setUser(u);
+      setPhone(u.phone || "");
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const createDraft = async () => {
     setError("");
@@ -140,10 +152,31 @@ export default function NewClaim() {
     setClaim(updated);
   };
 
+  const updatePhoneIfChanged = async () => {
+    if (user && phone !== user.phone) {
+      try {
+        setUpdatingPhone(true);
+        await api.completeProfile({
+          full_name: user.full_name,
+          dob: user.dob,
+          plan_id: user.plan_id,
+          phone: phone.trim(),
+        });
+      } catch (err) {
+        setError(errorMessage(err, "Could not update phone"));
+        throw err;
+      } finally {
+        setUpdatingPhone(false);
+      }
+    }
+  };
+
   const submit = async () => {
     setError("");
     setBusy(true);
     try {
+      // Update phone if changed before submitting claim
+      await updatePhoneIfChanged();
       await api.submitClaim(claim.id);
       nav(`/app/claims/${claim.id}`, { replace: true });
     } catch (err) {
@@ -295,11 +328,26 @@ export default function NewClaim() {
               </div>
             </div>
           </Card>
+          <Card className="space-y-3 p-6">
+            <div className="text-sm font-medium text-navy">Phone for notifications</div>
+            <p className="text-xs text-gray-400">
+              We'll use this number to notify you when your claim is decided.
+            </p>
+            <Field label="Mobile number">
+              <input
+                className="input"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="E.164 format: +919876543210"
+              />
+            </Field>
+          </Card>
           <div className="flex justify-between">
             <Button variant="ghost" onClick={() => setStep(2)}>
               Back
             </Button>
-            <Button onClick={submit} loading={busy}>
+            <Button onClick={submit} loading={busy || updatingPhone}>
               Submit claim
             </Button>
           </div>

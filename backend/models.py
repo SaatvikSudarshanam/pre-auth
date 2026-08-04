@@ -75,6 +75,7 @@ class User(Base):
     google_sub = Column(String, unique=True, nullable=True)
     avatar_url = Column(String, nullable=True)
     full_name = Column(String, nullable=True)
+    phone = Column(String, nullable=True)  # E.164, e.g. +919876543210 — used for Twilio calls
     dob = Column(String, nullable=True)  # ISO date string
     member_id = Column(String, unique=True, nullable=True)
     plan_id = Column(Integer, ForeignKey("plans.id"), nullable=True)

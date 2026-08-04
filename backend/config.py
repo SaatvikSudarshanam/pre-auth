@@ -64,6 +64,13 @@ GOOGLE_USERINFO_URI = os.getenv(
 PRIVACY_POLICY_VERSION = os.getenv("PRIVACY_POLICY_VERSION", "2026-07-12")
 COOKIE_POLICY_VERSION = os.getenv("COOKIE_POLICY_VERSION", "2026-07-12")
 
+# Twilio voice (admin decision notifications). Secrets stay in backend/.env only.
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")  # E.164, your Twilio number
+TWILIO_TEST_PHONE_NUMBER = os.getenv("TWILIO_TEST_PHONE_NUMBER", "+919014582844")  # Static test number for development
+TWILIO_CALLBACK_URL = os.getenv("TWILIO_CALLBACK_URL", "")  # Base URL for TwiML callbacks (e.g. https://ngrok.io/api/twilio/twiml)
+
 # Upload constraints
 ALLOWED_MIME = {
     "application/pdf": "pdf",

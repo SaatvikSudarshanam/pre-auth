@@ -94,6 +94,7 @@ cp .env.example backend/.env
 Set in `backend/.env`:
 - `GROQ_API_KEY` — from https://console.groq.com
 - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` — for the voice call notification flow
 
 The Google **Authorized redirect URI** must exactly match:
 
@@ -101,7 +102,84 @@ The Google **Authorized redirect URI** must exactly match:
 http://localhost:8068/rbac/oauth/google/callback
 ```
 
-### 2. Backend (port 8068)
+### 2. Twilio voice setup (same time as email)
+
+When an admin saves a decision, the app sends the customer email via EmailJS **and** triggers a Twilio voice call at the same time.
+
+**Setup in `backend/.env`:**
+
+```bash
+# Your Twilio Account SID (from https://console.twilio.com/)
+TWILIO_ACCOUNT_SID=ACfc22635530700e9b1fdef852f3f37886
+
+# Your Twilio Auth Token (from https://console.twilio.com/)
+TWILIO_AUTH_TOKEN=1638ce0ebdab9e3bb89b924a98c47c29
+
+# Your Twilio phone number (the "from" number, where calls originate)
+# Must be voice-enabled and in E.164 format
+TWILIO_PHONE_NUMBER=+17372212163
+
+# Static test phone number for development (optional, defaults to +919014582844)
+# Used when customer has no phone on file — allows testing without profile updates
+TWILIO_TEST_PHONE_NUMBER=+919014582844
+
+# For trial accounts ONLY: the callback URL where Twilio fetches TwiML
+# See "Trial account setup" section below. Leave empty for paid accounts.
+TWILIO_CALLBACK_URL=
+```
+
+**Customer phone (collected per-user):**
+
+Each customer enters their mobile number when completing their profile. The app stores it in E.164 format (e.g. `+919014582844`) and uses that number as the "to" destination for Twilio voice calls.
+
+**For testing:** If a customer has no phone on file, the system automatically uses `TWILIO_TEST_PHONE_NUMBER`. This lets you test the full flow without updating each customer's profile.
+
+**Trial account setup (required for trial accounts):**
+
+Twilio trial accounts cannot use inline TwiML (sending the voice script directly). Instead, they must fetch it via a callback URL. To make this work locally:
+
+1. **Install ngrok** (free tunneling tool):
+   ```bash
+   # macOS / Linux:
+   brew install ngrok
+   
+   # Windows: download from https://ngrok.com/download or
+   choco install ngrok
+   ```
+
+2. **Start ngrok** (in a separate terminal):
+   ```bash
+   ngrok http 8068
+   ```
+   This will output something like:
+   ```
+   Forwarding    https://abc123xyz.ngrok.io -> http://localhost:8068
+   ```
+
+3. **Copy the HTTPS URL** (e.g., `https://abc123xyz.ngrok.io`) and set in `backend/.env`:
+   ```bash
+   TWILIO_CALLBACK_URL=https://abc123xyz.ngrok.io/api/twilio/twiml
+   ```
+
+4. **Restart Docker or the backend**:
+   ```bash
+   docker compose down
+   docker compose up -d backend frontend
+   ```
+
+5. **Test a voice call**: Submit a claim, review as admin, and save the decision. Twilio will call your backend via ngrok to fetch the voice script.
+
+**Note:** ngrok's free tier generates a new URL each time. If you restart ngrok, update `TWILIO_CALLBACK_URL` in `backend/.env` and restart the backend.
+
+**Paid account setup (simpler):**
+
+If you upgrade to a paid Twilio account, leave `TWILIO_CALLBACK_URL` empty and the system will use inline TwiML (no ngrok needed).
+
+**Trial account note:**
+
+If using a Twilio trial account, you **must verify each destination phone number** in the Twilio Console first, or calls will be rejected. Go to Phone Numbers → Verified Caller IDs and add the numbers you want to test with.
+
+### 3. Backend (port 8068)
 
 ```bash
 cd backend
@@ -115,7 +193,7 @@ uvicorn main:app --reload --port 8068
 First start creates `app.db`, seeds 3 plans, 2 demo customers, and 3 sample requests
 (with generated PDFs and two completed agent-pipeline reviews).
 
-### 3. Frontend (port 5173)
+### 4. Frontend (port 5173)
 
 ```bash
 cd frontend
@@ -170,6 +248,17 @@ docker compose down -v             # stop + wipe the storage volume (fresh seed 
 New customers can sign up with email/password or Google. After first sign-in you
 complete a short profile (name, DOB, plan) and a member ID (`MEM-2026-XXXX`) is issued.
 
+### Twilio voice notification flow
+
+When an admin saves a decision, the app sends **both email and voice call**:
+
+| When | From | To | How |
+|------|------|----|----|
+| **Email** | EmailJS | Customer's email (stored at signup) | Immediately via EmailJS API |
+| **Voice call** | `TWILIO_PHONE_NUMBER` (your account) | Customer's phone (entered in profile) | Immediately via Twilio API |
+
+The customer's phone number is collected during profile completion in E.164 format (e.g. `+919014582844`). If the customer has no phone on file or Twilio is not configured, the call is skipped gracefully and the user sees a message.
+
 ---
 
 ## Routes
@@ -186,11 +275,17 @@ complete a short profile (name, DOB, plan) and a member ID (`MEM-2026-XXXX`) is 
 ### Customer flow
 
 Sign in → complete profile → submit a pre-auth request through a 3-step stepper
-(details → documents → review). The uploads step shows exactly which document types
+(details → documents → review). 
+
+**Phone confirmation**: During the review step, customers confirm their mobile number (in E.164 format, e.g. `+919876543210`) — this is the number used for voice call and SMS notifications when the admin makes a decision.
+
+The uploads step shows exactly which document types
 the request type requires; **submission is blocked** (with the missing list) until
 all are attached — a deterministic backend rule check, **not** the LLM. The detail
 page shows a status timeline, the admin's plain-language message once decided, and —
 when *More Info Needed* — an upload control that returns the request to *Under Review*.
+
+**Re-verification on "More Info Needed"**: When customers upload additional documents in response to a "More Info Needed" status, they can confirm or update their phone number at that time as well.
 
 ### Admin flow
 
