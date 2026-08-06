@@ -409,7 +409,12 @@ export default function ClaimReview() {
       tasks.push(
         adminApi
           .notifyCall(id, notifyPayload)
-          .then((res) => ({ channel: "call", ok: true, skipped: res.skipped, reason: res.reason }))
+          .then((res) => ({
+            channel: "call",
+            ok: res.ok !== false,
+            skipped: res.skipped,
+            reason: res.reason,
+          }))
           .catch((err) => ({ channel: "call", ok: false, error: err })),
       );
 
@@ -422,10 +427,10 @@ export default function ClaimReview() {
       else if (isEmailConfigured() && emailResult && !emailResult.ok) parts.push("Email failed.");
 
       if (callResult?.ok && !callResult.skipped) parts.push("Phone call initiated.");
-      else if (callResult?.ok && callResult.skipped) parts.push("Call skipped (Twilio not configured).");
-      else if (callResult && !callResult.ok) {
-        const msg = callResult.error?.message || "Call failed";
-        parts.push(msg.includes("no phone") ? "No customer phone on file." : "Call failed.");
+      else if (callResult && (callResult.skipped || !callResult.ok)) {
+        // Surface the backend/n8n reason instead of a bare "Call failed".
+        const msg = callResult.reason || callResult.error?.message || "Call failed";
+        parts.push(msg.includes("no phone") ? "No customer phone on file." : `Call failed — ${msg}`);
       }
 
       setSavedNote(parts.join(" "));

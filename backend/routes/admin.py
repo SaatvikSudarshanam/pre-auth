@@ -385,15 +385,21 @@ CLAIM_TYPE_LABEL = {
 @router.post("/claims/{claim_id}/notify-call")
 def notify_call(claim_id: int, body: NotifyCallIn, db: Session = Depends(get_db)):
     print(f"DEBUG: notify_call called for claim {claim_id}", flush=True)
-    
+
     from config import TWILIO_TEST_PHONE_NUMBER, TWILIO_CALLBACK_URL
     from services.twilio_voice import is_twilio_configured, place_decision_call
+    from services.n8n_voice import is_n8n_configured, trigger_decision_call
 
-    print(f"DEBUG: Imported config. callback_url = {TWILIO_CALLBACK_URL}", flush=True)
+    use_n8n = is_n8n_configured()
+    print(f"DEBUG: channel = {'n8n' if use_n8n else 'twilio-direct'}", flush=True)
 
-    if not is_twilio_configured():
-        print(f"DEBUG: Twilio not configured", flush=True)
-        return {"ok": False, "skipped": True, "reason": "Twilio is not configured"}
+    if not use_n8n and not is_twilio_configured():
+        print(f"DEBUG: neither n8n nor Twilio configured", flush=True)
+        return {"ok": False, "skipped": True,
+                "reason": "No call channel configured (set N8N_WEBHOOK_URL or Twilio credentials)"}
+
+    if body.action not in ADMIN_ACTIONS:
+        raise HTTPException(status_code=422, detail="Invalid action")
 
     print(f"DEBUG: Loading claim {claim_id}", flush=True)
     claim = _load_claim(db, claim_id)
@@ -402,12 +408,26 @@ def notify_call(claim_id: int, body: NotifyCallIn, db: Session = Depends(get_db)
     to_phone = user.phone or TWILIO_TEST_PHONE_NUMBER
     print(f"DEBUG: to_phone = {to_phone}", flush=True)
 
-    if body.action not in ADMIN_ACTIONS:
-        raise HTTPException(status_code=422, detail="Invalid action")
-
     claim_type = CLAIM_TYPE_LABEL.get(claim.claim_type, claim.claim_type)
-    print(f"DEBUG: About to call place_decision_call", flush=True)
+
     try:
+        if use_n8n:
+            print(f"DEBUG: About to POST to n8n webhook", flush=True)
+            result = trigger_decision_call(
+                to_phone=to_phone,
+                customer_name=user.full_name,
+                claim_id=claim.id,
+                action=body.action,
+                message=body.customer_message.strip(),
+                claim_type=claim_type,
+            )
+            print(f"DEBUG: n8n responded: {result}", flush=True)
+            # n8n echoes the Twilio response when the webhook responds with the
+            # last node; "Respond: Immediately" gives us nothing, which is fine.
+            return {"ok": True, "channel": "n8n", "phone": to_phone,
+                    "call_sid": result.get("sid") or result.get("call_sid")}
+
+        print(f"DEBUG: About to call place_decision_call", flush=True)
         call_sid = place_decision_call(
             to_phone=to_phone,
             customer_name=user.full_name,
@@ -418,14 +438,15 @@ def notify_call(claim_id: int, body: NotifyCallIn, db: Session = Depends(get_db)
             callback_url=TWILIO_CALLBACK_URL,
         )
         print(f"DEBUG: call_sid = {call_sid}", flush=True)
+        return {"ok": True, "channel": "twilio", "call_sid": call_sid, "phone": to_phone}
+
     except ValueError as exc:
         print(f"DEBUG: ValueError: {exc}", flush=True)
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         # Log error but don't crash — return graceful skip instead of 502
-        print(f"WARNING: Twilio call failed for claim {claim_id}: {exc}", flush=True)
+        channel = "n8n" if use_n8n else "Twilio"
+        print(f"WARNING: {channel} call failed for claim {claim_id}: {exc}", flush=True)
         import traceback
         traceback.print_exc()
-        return {"ok": False, "skipped": True, "reason": f"Twilio call failed: {exc}"}
-
-    return {"ok": True, "call_sid": call_sid, "phone": to_phone}
+        return {"ok": False, "skipped": True, "reason": f"{channel} call failed: {exc}"}

@@ -1,0 +1,57 @@
+{
+  "name": "PreAuthIQ — decision call",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "c76a202b-a40b-4d23-85c6-e015bdd8e713",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 0],
+      "id": "532fd581-b6e3-42d5-9c78-7b455753cc41",
+      "name": "Webhook",
+      "webhookId": "c76a202b-a40b-4d23-85c6-e015bdd8e713"
+    },
+    {
+      "parameters": {
+        "resource": "call",
+        "from": "+17016706560",
+        "to": "+918121326171",
+        "twiml": false,
+        "message": "={{ $json.body.message }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [208, 0],
+      "id": "b3ca2420-482b-4fbd-b496-adb906dc8b29",
+      "name": "Make a call",
+      "credentials": {
+        "twilioApi": {
+          "id": "JWnJajr1Us3KnZbi",
+          "name": "Twilio account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Make a call",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "8751453f618dde41ea04ad2850883392a7e3624143a93901ec7b2a699d784ede"
+  }
+}

@@ -24,6 +24,9 @@ services:
       - "8068:8068"
     volumes:
       - backend_storage:/app/storage
+    # Lets the container reach n8n running on the host (N8N_WEBHOOK_URL).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   frontend:

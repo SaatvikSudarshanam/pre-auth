@@ -4,6 +4,8 @@
 .env.local
 backend/.env
 **/.env
+.env.bak
+**/.env.bak
 client_secret*.json
 *.pem
 *.key

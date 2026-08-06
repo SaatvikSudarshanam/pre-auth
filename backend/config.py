@@ -69,7 +69,17 @@ TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")  # E.164, your Twilio number
 TWILIO_TEST_PHONE_NUMBER = os.getenv("TWILIO_TEST_PHONE_NUMBER", "+919014582844")  # Static test number for development
+# Trial accounts may only dial Verified Caller IDs. When on, every decision call
+# is routed to TWILIO_TEST_PHONE_NUMBER no matter whose claim it is.
+TWILIO_TRIAL_MODE = os.getenv("TWILIO_TRIAL_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}
 TWILIO_CALLBACK_URL = os.getenv("TWILIO_CALLBACK_URL", "")  # Base URL for TwiML callbacks (e.g. https://ngrok.io/api/twilio/twiml)
+
+# n8n automation. When N8N_WEBHOOK_URL is set, decision calls are handed to the
+# n8n workflow (which owns the Twilio credential) instead of calling Twilio
+# directly from here. Unset => direct Twilio, unchanged behaviour.
+N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL", "")
+N8N_WEBHOOK_TOKEN = os.getenv("N8N_WEBHOOK_TOKEN", "")  # optional; sent as Authorization: Bearer …
+N8N_TIMEOUT_SECONDS = float(os.getenv("N8N_TIMEOUT_SECONDS", "15"))
 
 # Upload constraints
 ALLOWED_MIME = {

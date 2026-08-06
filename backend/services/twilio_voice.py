@@ -48,6 +48,31 @@ def store_twiml_for_callback(call_id: str, twiml: str):
     _twiml_cache[call_id] = twiml
 
 
+def build_call_script(
+    *,
+    customer_name: str | None,
+    claim_id: int,
+    action: str,
+    message: str,
+    claim_type: str = "",
+) -> str:
+    """The spoken script for a decision call.
+
+    Shared by the direct-Twilio path and the n8n path so both channels say
+    exactly the same thing.
+    """
+    decision = ACTION_LABELS.get(action, action)
+    name = customer_name or "there"
+    claim_bit = f" for {claim_type}" if claim_type else ""
+    return (
+        f"Hello {name}. This is Pre Auth I Q with an update on your "
+        f"pre-authorization claim number {claim_id}{claim_bit}. "
+        f"The decision is {decision}. "
+        f"{message[:400]}. "
+        f"Thank you. Goodbye."
+    )
+
+
 def place_decision_call(
     *,
     to_phone: str,
@@ -83,15 +108,12 @@ def place_decision_call(
     if not _E164.match(normalized):
         raise ValueError(f"Invalid phone number: {to_phone!r}. Use E.164 format, e.g. +919876543210")
 
-    decision = ACTION_LABELS.get(action, action)
-    name = customer_name or "there"
-    claim_bit = f" for {claim_type}" if claim_type else ""
-    script = (
-        f"Hello {name}. This is Pre Auth I Q with an update on your "
-        f"pre-authorization claim number {claim_id}{claim_bit}. "
-        f"The decision is {decision}. "
-        f"{message[:400]}. "
-        f"Thank you. Goodbye."
+    script = build_call_script(
+        customer_name=customer_name,
+        claim_id=claim_id,
+        action=action,
+        message=message,
+        claim_type=claim_type,
     )
 
     from twilio.rest import Client
