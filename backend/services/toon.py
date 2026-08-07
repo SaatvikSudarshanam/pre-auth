@@ -136,6 +136,7 @@ AGENT_CONTEXT_FIELDS = {
         "claim": ["claim_id", "claim_type", "amount"],
         "identity": ["full_name", "dob", "member_id"],
         "identity_signals": True,      # deterministic OCR / name-match signals
+        "document_verification": True,  # forensics + GSTIN/address/name cross-checks
         "documents_text": True,        # the only agent that needs raw document text
     },
     "coverage": {
@@ -147,6 +148,10 @@ AGENT_CONTEXT_FIELDS = {
         "claim": ["claim_id", "claim_type", "amount", "date_of_service"],
         "plan_rules": ["annual_limit", "deductible", "copay_percent", "preauth_required", "rules"],
         "financials": ["annual_limit", "used_amount_this_year", "remaining_limit", "claim_amount"],
+        # The adjudicating agent sees the deterministic verdict directly rather
+        # than only the integrity agent's retelling of it — a fabricated GSTIN
+        # must not be able to soften on its way down the pipeline.
+        "document_verification": ["verdict", "risk", "failed_checks", "blocking_reasons"],
         "prior_agents": True,  # Include all upstream findings
     },
     "denial": {

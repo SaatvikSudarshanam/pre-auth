@@ -124,6 +124,13 @@ class Document(Base):
     filename = Column(String, nullable=False)
     path = Column(String, nullable=False)
     uploaded_at = Column(DateTime, default=utcnow)
+    # Content hash — indexed so duplicate-reuse lookups across claims stay cheap.
+    sha256 = Column(String, nullable=True, index=True)
+    # Cached services.verification envelope. Verification costs an LLM call per
+    # document, and a document is immutable once uploaded, so a re-review reuses
+    # this instead of paying again.
+    verification_json = Column(JSON, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
 
     claim = relationship("Claim", back_populates="documents")
 

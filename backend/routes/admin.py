@@ -248,38 +248,66 @@ def run_ai_review(claim_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=502, detail=str(exc))
 
     result = pipeline.review
+    verification = context.get("document_verification_full")
     det_score, breakdown = compute_deterministic_score(
-        claim, claim.user.plan, context["used_amount"], result.flags
+        claim, claim.user.plan, context["used_amount"], result.flags,
+        verification=verification,
     )
     final = compute_final_score(result.ai_confidence, det_score)
 
     # --- Integrity hard-gate (deterministic + agent) --------------------------
-    # No fake-document claim may auto-approve. If the account holder's name cannot
-    # be confirmed against the readable documents, or the integrity agent suspects
-    # fraud, block approval, cap the score, and raise a loud flag for the human.
+    # No fake-document claim may auto-approve. Three independent grounds, any of
+    # which blocks: the account holder's name cannot be confirmed against the
+    # readable documents; a deterministic check failed at critical severity (a
+    # fabricated GSTIN, a specimen watermark, a document reused from another
+    # claim); or the integrity agent suspects fraud. The first two are computed
+    # in code and cannot be argued away by the model.
     signals = context.get("identity_signals", {}) or {}
-    integrity_blocked = bool(signals.get("hard_mismatch")) or result.integrity_verdict == "suspected_fraud"
+    verification_verdict = (verification or {}).get("verdict")
+    blocking_reasons = list((verification or {}).get("blocking_reasons") or [])
+
+    integrity_blocked = (
+        bool(signals.get("hard_mismatch"))
+        or verification_verdict == "suspected_fraud"
+        or result.integrity_verdict == "suspected_fraud"
+    )
     identity_match = result.identity_match and not signals.get("hard_mismatch")
     if integrity_blocked:
-        result.flags.insert(
-            0,
-            "IDENTITY / DOCUMENT INTEGRITY: claimant identity could not be confirmed "
-            "against the submitted documents — manual verification required before approval",
-        )
+        # Cite the specific deterministic failure where we have one; the generic
+        # line is the fallback for an agent-only suspicion.
+        for reason in blocking_reasons:
+            result.flags.insert(0, f"DOCUMENT VERIFICATION: {reason}")
+        if not blocking_reasons:
+            result.flags.insert(
+                0,
+                "IDENTITY / DOCUMENT INTEGRITY: claimant identity could not be confirmed "
+                "against the submitted documents — manual verification required before approval",
+            )
         if result.verdict == "approve":
             result.verdict = "needs_info"
         final = min(final, 40)
         identity_match = False
+    elif verification and verification.get("failed_checks"):
+        # Non-critical failures do not trigger the fraud block, but they must
+        # never coexist with an auto-approval: a deterministic check said the
+        # documents disagree with the claim, and no amount of model confidence
+        # outranks that. Downgrade to needs_info and surface every failure.
+        for check in (verification.get("checks") or []):
+            if check["status"] == "fail":
+                result.flags.append(f"document check failed ({check['key']}): {check['detail']}")
+        if result.verdict == "approve":
+            result.verdict = "needs_info"
 
     integrity_summary = {
         "verdict": result.integrity_verdict,
-        "risk": result.integrity_risk,
+        "risk": max(result.integrity_risk, int((verification or {}).get("risk") or 0)),
         "identity_match": identity_match,
         "blocked": integrity_blocked,
         "ocr_used": signals.get("ocr_used", False),
         "ocr_score": signals.get("ocr_score"),
         "ocr_mean_confidence": signals.get("ocr_mean_confidence"),
         "deterministic": signals,
+        "verification": verification,
         "agent": (result.raw.get("agents", {}) or {}).get("document_integrity", {}),
     }
 

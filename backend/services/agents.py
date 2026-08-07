@@ -95,6 +95,10 @@ _BLOCK_LABELS = {
     "completeness": "DOCUMENT COMPLETENESS (deterministic, authoritative)",
     "identity": "ACCOUNT IDENTITY",
     "identity_signals": "IDENTITY SIGNALS (deterministic OCR / name-match)",
+    "document_verification": (
+        "DOCUMENT VERIFICATION (deterministic, authoritative — forensics, GSTIN "
+        "checksum, address, name/provider match)"
+    ),
     "documents": "DOCUMENTS",
     "documents_text": "DOCUMENTS",
 }

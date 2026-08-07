@@ -13,17 +13,34 @@ from seed import seed_if_empty
 from sqlalchemy import inspect, text
 
 
+# table -> {column: DDL type}. Additive only; SQLite cannot drop or retype a
+# column in place, so anything beyond this needs a real migration tool.
+_ADDED_COLUMNS = {
+    "users": {"phone": "VARCHAR"},
+    "documents": {
+        "sha256": "VARCHAR",           # content hash — duplicate-reuse detection
+        "verification_json": "JSON",   # cached per-document verification envelope
+        "verified_at": "DATETIME",
+    },
+}
+
+
 def _migrate_schema():
     """Lightweight SQLite migrations for columns added after first deploy."""
     if not str(engine.url).startswith("sqlite"):
         return
     insp = inspect(engine)
-    if "users" not in insp.get_table_names():
-        return
-    cols = {c["name"] for c in insp.get_columns("users")}
-    if "phone" not in cols:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE users ADD COLUMN phone VARCHAR"))
+    tables = set(insp.get_table_names())
+    for table, columns in _ADDED_COLUMNS.items():
+        if table not in tables:
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for name, ddl_type in columns.items():
+            if name not in existing:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl_type}")
+                    )
 
 
 app = FastAPI(title=f"{APP_NAME} — Insurance Pre-Authorization (Demo)")

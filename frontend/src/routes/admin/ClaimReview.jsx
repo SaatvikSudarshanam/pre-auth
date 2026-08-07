@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import RadialGauge from "../../components/RadialGauge";
@@ -140,6 +140,10 @@ function IntegrityBanner({ integrity }) {
   const bad = integrity.blocked || integrity.identity_match === false;
   const ocrUsed = integrity.ocr_used;
   const ocrScore = integrity.ocr_score;
+  // Specific deterministic reasons (fabricated GSTIN, specimen watermark, a file
+  // reused across claims). Preferred over the generic identity sentence — they
+  // are what a reviewer acts on and what the customer is told.
+  const blocking = integrity.verification?.blocking_reasons || [];
 
   // Nothing noteworthy: clean, no OCR, no unverifiable docs.
   if (!bad && !unverifiable.length && !ocrUsed) return null;
@@ -170,6 +174,13 @@ function IntegrityBanner({ integrity }) {
         )}
       </div>
       <div className="mt-2 space-y-1 text-sm">
+        {blocking.length > 0 && (
+          <ul className="list-disc space-y-1 pl-5">
+            {blocking.map((reason, i) => (
+              <li key={i}>{reason}</li>
+            ))}
+          </ul>
+        )}
         {integrity.identity_match === false && (
           <p>
             The account holder's name could not be confirmed against the readable
@@ -191,6 +202,207 @@ function IntegrityBanner({ integrity }) {
         )}
       </div>
     </div>
+  );
+}
+
+// ---- document verification ----------------------------------------------
+const CHECK_TONE = {
+  pass: { dot: "bg-green-100 text-green-700", mark: "✓", text: "text-gray-500" },
+  fail: { dot: "bg-red-100 text-red-700", mark: "✕", text: "text-red-700" },
+  warn: { dot: "bg-amber-100 text-amber-700", mark: "!", text: "text-amber-700" },
+  unknown: { dot: "bg-gray-100 text-gray-400", mark: "?", text: "text-gray-400" },
+};
+
+const VERDICT_TONE = {
+  clear: "bg-green-50 text-green-700 border-green-200",
+  authentic_likely: "bg-green-50 text-green-700 border-green-200",
+  review: "bg-amber-50 text-amber-700 border-amber-200",
+  suspected_fraud: "bg-red-50 text-red-700 border-red-200",
+  unknown: "bg-gray-50 text-gray-500 border-gray-200",
+};
+
+const VERDICT_LABEL = {
+  clear: "All checks passed",
+  authentic_likely: "authentic",
+  review: "Needs review",
+  suspected_fraud: "Suspected fraud",
+  unknown: "unverified",
+};
+
+function CheckRow({ check }) {
+  const tone = CHECK_TONE[check.status] || CHECK_TONE.unknown;
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      <span
+        className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold ${tone.dot}`}
+        title={check.status}
+      >
+        {tone.mark}
+      </span>
+      <span className="min-w-0">
+        <span className="font-medium text-navy">{check.label}</span>
+        <span className={`ml-1.5 ${tone.text}`}>{check.detail}</span>
+      </span>
+    </li>
+  );
+}
+
+// Extracted fields worth showing next to the checks. Anything not listed here
+// is still persisted on the review — this is the reviewer's summary, not the
+// full envelope.
+const SHOWN_FIELDS = [
+  ["patient_name", "Patient"],
+  ["provider_name", "Provider"],
+  ["gstin", "GSTIN"],
+  ["provider_address", "Address"],
+  ["invoice_number", "Invoice no."],
+  ["invoice_date", "Invoice date"],
+  ["amount", "Amount"],
+];
+
+function ExtractedFields({ fields }) {
+  if (!fields) return null;
+  const rows = SHOWN_FIELDS.map(([key, label]) => [label, fields[key]]).filter(
+    ([, f]) => f && f.value != null && f.value !== ""
+  );
+  if (!rows.length) return null;
+  return (
+    <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-0.5 text-[11px]">
+      {rows.map(([label, f]) => (
+        <Fragment key={label}>
+          <dt className="text-gray-400">{label}</dt>
+          <dd className="min-w-0 break-words text-gray-600">
+            {String(f.value)}
+            {typeof f.confidence === "number" && f.confidence < 70 && (
+              <span className="ml-1 text-amber-600">({f.confidence}% read)</span>
+            )}
+          </dd>
+        </Fragment>
+      ))}
+    </dl>
+  );
+}
+
+function VerificationPanel({ verification }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!verification) return null;
+
+  const { verdict, risk, counts = {}, checks = [], documents = [] } = verification;
+  const claimChecks = checks.filter((c) => !c.document);
+  const tone = VERDICT_TONE[verdict] || VERDICT_TONE.unknown;
+
+  // Collapsed by default on a clean result — a reviewer looking at a clean claim
+  // does not need nine green rows, but must be able to see them on demand.
+  const noteworthy = verdict !== "clear";
+  const open = expanded || noteworthy;
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="label">Document verification</div>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${tone}`}>
+            {VERDICT_LABEL[verdict] || verdict}
+          </span>
+          {typeof risk === "number" && (
+            <span className="text-[11px] text-gray-400">risk {risk}/100</span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-1 text-[11px] text-gray-400">
+        {counts.pass || 0} passed · {counts.fail || 0} failed · {counts.warn || 0} warned ·{" "}
+        {counts.unknown || 0} unverifiable — computed in code, not by the model
+      </div>
+
+      {verification.note && (
+        <p className="mt-3 text-sm text-amber-700">{verification.note}</p>
+      )}
+
+      {!open && (
+        <button
+          onClick={() => setExpanded(true)}
+          className="mt-3 text-xs font-medium text-brand hover:underline"
+        >
+          Show all {checks.length} checks
+        </button>
+      )}
+
+      {open && (
+        <>
+          {claimChecks.length > 0 && (
+            <ul className="mt-4 space-y-1.5">
+              {claimChecks.map((c) => (
+                <CheckRow key={c.key} check={c} />
+              ))}
+            </ul>
+          )}
+
+          {documents.map((d) => {
+            const shown = expanded
+              ? d.checks
+              : d.checks.filter((c) => c.status !== "pass");
+            const fVerdict = d.forensics?.verdict;
+            return (
+              <div key={d.document_id} className="mt-4 border-t border-gray-100 pt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-navy">{d.filename}</span>
+                  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">
+                    {DOC_TYPE_LABEL[d.doc_type] || d.doc_type}
+                  </span>
+                  {fVerdict && (
+                    <span
+                      className={`rounded-full border px-2 py-0.5 text-[10px] ${
+                        VERDICT_TONE[fVerdict] || VERDICT_TONE.unknown
+                      }`}
+                      title="File provenance: metadata, EXIF, watermark, recompression"
+                    >
+                      {VERDICT_LABEL[fVerdict] || fVerdict}
+                    </span>
+                  )}
+                  {d.source && (
+                    <span className="text-[10px] text-gray-400">
+                      read via {d.source}
+                      {d.ocr_confidence != null &&
+                        ` (${Math.round(d.ocr_confidence * 100)}%)`}
+                    </span>
+                  )}
+                </div>
+
+                {shown.length > 0 && (
+                  <ul className="mt-2 space-y-1.5">
+                    {shown.map((c) => (
+                      <CheckRow key={c.key} check={c} />
+                    ))}
+                  </ul>
+                )}
+
+                {expanded && <ExtractedFields fields={d.fields} />}
+
+                {expanded && d.forensics?.signals?.length > 0 && (
+                  <ul className="mt-2 space-y-0.5">
+                    {d.forensics.signals.map((s, i) => (
+                      <li key={i} className="text-[11px] text-gray-400">
+                        <span className="font-mono">{s.severity}</span> · {s.detail}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
+
+          {noteworthy && !expanded && (
+            <button
+              onClick={() => setExpanded(true)}
+              className="mt-3 text-xs font-medium text-brand hover:underline"
+            >
+              Show passing checks, extracted fields, and provenance signals
+            </button>
+          )}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -488,6 +700,9 @@ export default function ClaimReview() {
       {reviewError && <Alert>{reviewError}</Alert>}
 
       {review?.integrity && <IntegrityBanner integrity={review.integrity} />}
+      {review?.integrity?.verification && (
+        <VerificationPanel verification={review.integrity.verification} />
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         {/* Left — documents */}
