@@ -69,15 +69,51 @@ Document Integrity Agent with a **deterministic** backend cross-check
 - This is enforced deterministically, so it holds even if the LLM is wrong or is
   prompt-injected into saying "approve".
 
-**Honest limitations (demo).** OCR reads text, not intent — it does **not** do true
-forgery forensics (tampered pixels, forged signatures, template/EXIF analysis) or
-duplicate-claim detection. A determined forger who submits a text-consistent fake
-still needs the human reviewer; the deterministic gate specifically stops the common
-**name/identity mismatch** case (including in images now) and blocks auto-approval.
-Low-confidence OCR reads are flagged rather than trusted. For production you'd add
-tamper/EXIF forensics, issuer/database verification, and duplicate detection.
-Transient LLM errors are retried with backoff so a single agent hiccup doesn't fail
-the whole review.
+**Document verification.** Every document on a claim goes through three layers before
+adjudication, and only the middle one involves a model:
+
+| Layer | Module | What it establishes |
+|---|---|---|
+| Forensics | `services/forensics.py` | Provenance of the **file**: SHA-256, PDF Producer/Creator against a generator fingerprint list (image editors, online invoice builders, diffusion tools), incremental-update count, image-only-PDF detection, EXIF camera vs. missing/stripped metadata, PNG generation-prompt chunks and C2PA genAI markers, specimen/template watermark text, letterhead density, **stamp/seal ink detection**, digital-signature fields, and error-level analysis for spliced edits. |
+| Extraction | `prompts/agents/extraction.txt` | Transcription of the **content** — patient, provider, address, GSTIN, invoice number/date, amount — plus perceptual observations (tampering, watermark text, **stamp/seal presence and its text**, how machine-generated the page looks). The model is never told what any value should be, and never asked whether one is valid. |
+| Cross-check | `services/crosscheck.py` | Exact comparison against the authoritative values: patient name vs. the signed-in Google profile, hospital vs. the claim's provider, GSTIN mod-36 checksum (`services/gstin.py`), PIN ↔ GSTIN-state agreement (`services/address.py`), claimed amount vs. documented total, invoice dates vs. date of service, **stamp presence on document types that should carry one**, and byte-identical reuse across claims. |
+
+**Stamp / seal detection.** A hospital bill, prescription, or discharge summary is
+stamped at the counter and signed by the issuing officer; a page that was printed or
+generated and never physically handled carries neither. Two independent observers
+run: `forensics.py` counts saturated mid-luminance ink (stamp pad blue/violet, pen
+red) that neither black print nor white paper produces, and reports its hue, coverage
+and position; the extraction agent reports what it can *see*, which catches black-ink
+stamps the colour test cannot. Either one satisfies the check. Two things exempt a
+document — a digital signature field, and an explicit "computer generated / no
+signature required" note, both of which large hospitals genuinely issue. Absence is
+scored `medium`: plenty of legitimate documents are unstamped, so it earns its weight
+in combination rather than alone.
+
+Name matching (`services/matching.py`) is token-based with a proportional edit budget,
+so `Rishitha Sajjapurarn` still matches `Sri Rishitha Sajjapuram` (OCR rn/m) and
+`Apollo Hospitals Enterprise Ltd` still matches a claim for `Apollo Hospital`, while
+`Sita Rama` does not match `Sita Ram`.
+
+Each check reports `pass | fail | warn | unknown`. **`unknown` is never a pass** — a
+blank or unreadable document scores strictly worse than a clean one, which is what
+stops an empty upload from coasting through. A `critical` failure (fabricated GSTIN,
+`SPECIMEN` watermark, a file already used on another claim, a different patient's
+name) blocks auto-approval outright and its specific reason becomes the denial text.
+Results are cached on the `documents` row, so a re-review costs no extra LLM calls.
+
+**Honest limitations (demo).** Reuse detection is exact-hash only — a re-photographed
+or re-saved bill will not collide, so it is a floor rather than a ceiling. Address
+validation is offline: it proves internal consistency (the PIN and the GSTIN agree on
+the state), not that the building exists. Error-level analysis is a heuristic that
+high-contrast line art can trip, which is why it never reaches `critical` on its own.
+Stamp detection establishes *presence*, not authenticity — it does not read the stamp,
+match it to the hospital, or notice one pasted in from another document; absence is
+the informative direction. There is no issuer/registry lookup, so a well-formed GSTIN
+that passes its checksum is not confirmed to belong to the named hospital. A determined forger who produces a
+fully self-consistent fake still needs the human reviewer. Transient LLM errors are
+retried with backoff, and if extraction is unavailable entirely, verification degrades
+to forensics-only rather than failing the review.
 
 ---
 
@@ -302,8 +338,12 @@ customer message. Saving records the action and whether the admin agreed with th
 
 The displayed score never trusts the LLM's confidence alone:
 
-- **`deterministic_score`** (0–100), 25 pts each: required docs present, category
-  covered, amount within remaining annual limit, no date/amount inconsistency flagged.
+- **`deterministic_score`** (0–100), 20 pts each: required docs present, category
+  covered, amount within remaining annual limit, no date/amount inconsistency flagged,
+  and documents verified authentic. The last component is scored on a curve from the
+  verification risk rather than pass/fail — one ambiguous OCR character should not
+  cost the same as a fabricated GSTIN — and scores **0** when verification did not
+  run at all, so "we could not check" never reads as "we checked and it was fine".
 - **`ai_confidence`** (0–100): the Pre-Authorization Agent's confidence.
 - **`final_score = round(0.5 × ai_confidence + 0.5 × deterministic_score)`**, shown
   with the component breakdown.
@@ -357,10 +397,12 @@ backend/
   main.py  config.py  database.py  models.py  schemas.py  security.py
   routes/    auth.py  oauth.py  consent.py  customer.py  admin.py
   services/  llm_client.py  agents.py  ai_review.py  context.py
-             scoring.py  completeness.py  documents.py
-  prompts/agents/  registration.txt  completeness.txt  coverage.txt
-                   preauthorization.txt  denial.txt
-  seed.py  smoke_test.py  Dockerfile
+             scoring.py  completeness.py  documents.py  ocr.py  integrity.py
+             document_review.py  verification.py  forensics.py  crosscheck.py
+             matching.py  address.py  gstin.py  toon.py
+  prompts/agents/  registration.txt  completeness.txt  integrity.txt
+                   extraction.txt  coverage.txt  preauthorization.txt  denial.txt
+  seed.py  smoke_test.py  verify_documents.py  verify_gstin.py  Dockerfile
 frontend/
   src/
     App.jsx  main.jsx  index.css
@@ -382,6 +424,15 @@ access control). With `GROQ_API_KEY` set it calls Groq for real:
 
 ```bash
 cd backend && python smoke_test.py
+```
+
+Two offline scripts verify the deterministic layers with no API key and no network
+— run them after touching any validation rule:
+
+```bash
+cd backend
+python verify_documents.py   # name/org matching, address, cross-checks, forensics
+python verify_gstin.py       # GSTIN mod-36 checksum in isolation
 ```
 
 ## Seed data

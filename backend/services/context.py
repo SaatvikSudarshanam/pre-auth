@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from models import Claim, User
 from services.completeness import check_claim_documents
+from services.document_review import summarize_for_agent, verify_claim_documents
 from services.documents import extract_document_text
 from services.integrity import check_identity
 from services.toon import (
@@ -27,7 +28,15 @@ def used_annual_amount(db: Session, user_id: int, exclude_claim_id: int | None =
     return total
 
 
-def build_claim_context(db: Session, claim: Claim) -> dict:
+def build_claim_context(db: Session, claim: Claim, verify_documents: bool = True) -> dict:
+    """Assemble everything the agent pipeline reasons over.
+
+    `verify_documents` runs the per-document forensics + extraction + cross-check
+    pass (services.document_review). It costs one LLM call per unverified
+    document, cached on the Document row thereafter. Turn it off only for
+    diagnostics — with it off, the integrity agent sees raw OCR text and no
+    deterministic verdict, which is the pre-verification behaviour.
+    """
     user: User = claim.user
     plan = user.plan
 
@@ -41,6 +50,8 @@ def build_claim_context(db: Session, claim: Claim) -> dict:
         "required": [], "present": [], "missing": [], "complete": False
     }
     used = used_annual_amount(db, user.id, exclude_claim_id=claim.id)
+
+    verification = verify_claim_documents(db, claim) if verify_documents else None
 
     return {
         "claim": {
@@ -75,6 +86,10 @@ def build_claim_context(db: Session, claim: Claim) -> dict:
             "email": user.email,
         },
         "identity_signals": check_identity(claim),
+        # Compact projection for the agents; the full result is kept alongside so
+        # the admin route can persist and render it without re-verifying.
+        "document_verification": summarize_for_agent(verification) if verification else None,
+        "document_verification_full": verification,
         "documents_text": documents_text,
         "used_amount": used,
     }
